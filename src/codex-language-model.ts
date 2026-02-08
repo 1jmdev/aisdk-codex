@@ -17,6 +17,13 @@ import {
   convertTools,
   convertToolChoice,
 } from './convert-to-codex-messages.js';
+import type { FetchFunction } from './fetch-function.js';
+import {
+  createTextDecoderStream,
+  createTransformStream,
+  getFetchFunction,
+  randomUUID,
+} from './runtime-globals.js';
 
 // ── Config ─────────────────────────────────────────────────────────────
 
@@ -24,7 +31,20 @@ export interface CodexModelConfig {
   provider: string;
   baseURL: string;
   headers: () => Promise<Record<string, string>>;
-  fetch?: typeof globalThis.fetch;
+  fetch?: FetchFunction;
+}
+
+interface StreamReaderLike<T = unknown> {
+  read(): Promise<{ value?: T; done: boolean }>;
+}
+
+interface ReadableStreamLike<T = unknown> {
+  pipeThrough<TNext>(transform: unknown): ReadableStreamLike<TNext>;
+  getReader(): StreamReaderLike<T>;
+}
+
+interface EventSourceChunk {
+  data?: string;
 }
 
 // ── Language model ─────────────────────────────────────────────────────
@@ -143,7 +163,7 @@ export class CodexLanguageModel implements LanguageModelV3 {
     body['stream'] = true;
 
     const headers = await this.config.headers();
-    const fetchFn = this.config.fetch ?? globalThis.fetch;
+    const fetchFn = getFetchFunction(this.config.fetch);
 
     const endpoint = `${this.config.baseURL}/codex/responses`;
 
@@ -171,10 +191,10 @@ export class CodexLanguageModel implements LanguageModelV3 {
     let responseId: string | undefined;
     let responseModelId: string | undefined;
 
-    const reader = response
-      .body!.pipeThrough(new TextDecoderStream())
+    const reader = (response.body as ReadableStreamLike)
+      .pipeThrough(createTextDecoderStream())
       .pipeThrough(new EventSourceParserStream())
-      .getReader();
+      .getReader() as StreamReaderLike<EventSourceChunk>;
 
     for (;;) {
       const { value, done } = await reader.read();
@@ -222,7 +242,7 @@ export class CodexLanguageModel implements LanguageModelV3 {
           toolCalls.push({
             type: 'tool-call',
             toolCallId:
-              (parsed['call_id'] as string) ?? itemId ?? crypto.randomUUID(),
+              (parsed['call_id'] as string) ?? itemId ?? randomUUID(),
             toolName,
             input: argsString,
           });
@@ -269,7 +289,7 @@ export class CodexLanguageModel implements LanguageModelV3 {
     body['stream'] = true;
 
     const headers = await this.config.headers();
-    const fetchFn = this.config.fetch ?? globalThis.fetch;
+    const fetchFn = getFetchFunction(this.config.fetch);
 
     const endpoint = `${this.config.baseURL}/codex/responses`;
 
@@ -296,11 +316,11 @@ export class CodexLanguageModel implements LanguageModelV3 {
     let currentTextId: string | undefined;
     let currentReasoningId: string | undefined;
 
-    const stream = response
-      .body!.pipeThrough(new TextDecoderStream())
+    const stream = (response.body as ReadableStreamLike)
+      .pipeThrough(createTextDecoderStream())
       .pipeThrough(new EventSourceParserStream())
       .pipeThrough(
-        new TransformStream<
+        createTransformStream<
           { data?: string; event?: string; id?: string },
           LanguageModelV3StreamPart
         >({
@@ -324,7 +344,7 @@ export class CodexLanguageModel implements LanguageModelV3 {
 
               if (type === 'response.output_text.delta') {
                 if (!currentTextId) {
-                  currentTextId = crypto.randomUUID();
+                  currentTextId = randomUUID();
                   controller.enqueue({
                     type: 'text-start',
                     id: currentTextId,
@@ -345,7 +365,7 @@ export class CodexLanguageModel implements LanguageModelV3 {
                 }
               } else if (type === 'response.reasoning_summary_text.delta') {
                 if (!currentReasoningId) {
-                  currentReasoningId = crypto.randomUUID();
+                  currentReasoningId = randomUUID();
                   controller.enqueue({
                     type: 'reasoning-start',
                     id: currentReasoningId,
@@ -430,7 +450,7 @@ export class CodexLanguageModel implements LanguageModelV3 {
                 const toolCallId =
                   (parsed['call_id'] as string) ??
                   itemId ??
-                  crypto.randomUUID();
+                  randomUUID();
 
                 // Emit tool-input-end first
                 if (itemId) {
@@ -491,7 +511,7 @@ export class CodexLanguageModel implements LanguageModelV3 {
             }
           },
         }),
-      );
+      ) as unknown as ReadableStream<LanguageModelV3StreamPart>;
 
     return {
       stream,

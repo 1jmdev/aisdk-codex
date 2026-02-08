@@ -4,6 +4,7 @@ import { loadApiKey, withoutTrailingSlash } from '@ai-sdk/provider-utils';
 import { CodexLanguageModel } from './codex-language-model.js';
 import type { CodexModelId, CodexSettings } from './codex-settings.js';
 import { CodexAuth } from './codex-auth.js';
+import type { FetchFunction } from './fetch-function.js';
 
 // ── Provider interface ─────────────────────────────────────────────────
 
@@ -36,7 +37,7 @@ export interface CodexProviderSettings {
   /**
    * Custom fetch implementation.
    */
-  fetch?: typeof globalThis.fetch;
+  fetch?: FetchFunction;
 
   /**
    * Use an API key from `OPENAI_API_KEY` environment variable

@@ -1,6 +1,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { getFetchFunction } from './runtime-globals.js';
 
 export interface AuthDotJson {
   tokens?: {
@@ -25,8 +26,36 @@ interface NodeError extends Error {
   code?: string;
 }
 
+interface RuntimeBase64 {
+  atob?: (data: string) => string;
+  Buffer?: {
+    from: (data: string, encoding: string) => { toString: (encoding: string) => string };
+  };
+}
+
 const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const TOKEN_ENDPOINT = 'https://auth.openai.com/oauth/token';
+
+function decodeBase64UrlToUtf8(value: string): string {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+  const runtime = globalThis as unknown as RuntimeBase64;
+
+  if (runtime.atob) {
+    const binary = runtime.atob(padded);
+    return decodeURIComponent(
+      Array.from(binary)
+        .map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+        .join(''),
+    );
+  }
+
+  if (runtime.Buffer) {
+    return runtime.Buffer.from(padded, 'base64').toString('utf-8');
+  }
+
+  throw new Error('No base64 decoder available in this runtime environment.');
+}
 
 export class CodexAuth {
   private static cachedAuth: AuthDotJson | null = null;
@@ -70,9 +99,7 @@ export class CodexAuth {
       }
 
       const payload = parts[1]!;
-      const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-      const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-      const decoded = Buffer.from(padded, 'base64').toString('utf-8');
+      const decoded = decodeBase64UrlToUtf8(payload);
       const tokenData = JSON.parse(decoded) as Record<string, unknown>;
 
       this.cachedTokenInfo = {
@@ -179,7 +206,8 @@ export class CodexAuth {
       );
     }
 
-    const response = await fetch(TOKEN_ENDPOINT, {
+    const fetchFn = getFetchFunction();
+    const response = await fetchFn(TOKEN_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -195,7 +223,9 @@ export class CodexAuth {
       throw new Error(`Token refresh failed: ${errorText}`);
     }
 
-    const tokenResponse = (await response.json()) as {
+    const tokenResponse = (await (
+      response as unknown as { json(): Promise<unknown> }
+    ).json()) as {
       id_token: string;
       access_token: string;
       refresh_token?: string;
