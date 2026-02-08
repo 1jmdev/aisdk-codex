@@ -2,6 +2,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { getFetchFunction } from './runtime-globals.js';
+import type { FetchFunction } from './fetch-function.js';
 
 export interface AuthDotJson {
   tokens?: {
@@ -20,6 +21,14 @@ export interface IdTokenInfo {
   exp?: number;
   iat?: number;
   account_id?: string;
+}
+
+export interface RefreshTokenExchangeResult {
+  accessToken: string;
+  idToken: string;
+  refreshToken: string;
+  tokenInfo: IdTokenInfo;
+  accountId: string;
 }
 
 interface NodeError extends Error {
@@ -59,7 +68,9 @@ function decodeBase64UrlToUtf8(value: string): string {
 
 export class CodexAuth {
   private static cachedAuth: AuthDotJson | null = null;
-  private static cachedTokenInfo: IdTokenInfo | null = null;
+  private static cachedTokenInfo:
+    | { idToken: string; tokenInfo: IdTokenInfo }
+    | null = null;
   private static refreshPromise: Promise<void> | null = null;
 
   static getAuthFilePath(): string {
@@ -88,8 +99,8 @@ export class CodexAuth {
   }
 
   static parseIdToken(idToken: string): IdTokenInfo {
-    if (this.cachedTokenInfo) {
-      return this.cachedTokenInfo;
+    if (this.cachedTokenInfo?.idToken === idToken) {
+      return this.cachedTokenInfo.tokenInfo;
     }
 
     try {
@@ -102,7 +113,7 @@ export class CodexAuth {
       const decoded = decodeBase64UrlToUtf8(payload);
       const tokenData = JSON.parse(decoded) as Record<string, unknown>;
 
-      this.cachedTokenInfo = {
+      const tokenInfo: IdTokenInfo = {
         email: tokenData['email'] as string | undefined,
         name: tokenData['name'] as string | undefined,
         exp: tokenData['exp'] as number | undefined,
@@ -112,7 +123,8 @@ export class CodexAuth {
           (tokenData['account_id'] as string | undefined),
       };
 
-      return this.cachedTokenInfo;
+      this.cachedTokenInfo = { idToken, tokenInfo };
+      return tokenInfo;
     } catch (error) {
       throw new Error(`Failed to parse ID token: ${error}`);
     }
@@ -206,30 +218,9 @@ export class CodexAuth {
       );
     }
 
-    const fetchFn = getFetchFunction();
-    const response = await fetchFn(TOKEN_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: CLIENT_ID,
-        grant_type: 'refresh_token',
-        refresh_token: auth.tokens.refresh_token,
-        scope: 'openid profile email',
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Token refresh failed: ${errorText}`);
-    }
-
-    const tokenResponse = (await (
-      response as unknown as { json(): Promise<unknown> }
-    ).json()) as {
-      id_token: string;
-      access_token: string;
-      refresh_token?: string;
-    };
+    const tokenResponse = await this.exchangeRefreshTokenRaw(
+      auth.tokens.refresh_token,
+    );
 
     auth.tokens = {
       id_token: tokenResponse.id_token,
@@ -241,6 +232,61 @@ export class CodexAuth {
 
     await fs.writeFile(this.getAuthFilePath(), JSON.stringify(auth, null, 2));
     this.clearCache();
+  }
+
+  static async exchangeRefreshToken(
+    refreshToken: string,
+    fetch?: FetchFunction,
+  ): Promise<RefreshTokenExchangeResult> {
+    const tokenResponse = await this.exchangeRefreshTokenRaw(refreshToken, fetch);
+    const tokenInfo = this.parseIdToken(tokenResponse.id_token);
+    const accountId = tokenInfo.account_id;
+
+    if (!accountId) {
+      throw new Error('No account ID found in ID token returned from refresh token exchange.');
+    }
+
+    return {
+      accessToken: tokenResponse.access_token,
+      idToken: tokenResponse.id_token,
+      refreshToken: tokenResponse.refresh_token ?? refreshToken,
+      tokenInfo,
+      accountId,
+    };
+  }
+
+  private static async exchangeRefreshTokenRaw(
+    refreshToken: string,
+    fetch?: FetchFunction,
+  ): Promise<{
+    id_token: string;
+    access_token: string;
+    refresh_token?: string;
+  }> {
+    const fetchFn = getFetchFunction(fetch);
+    const response = await fetchFn(TOKEN_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: CLIENT_ID,
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        scope: 'openid profile email',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Token refresh failed: ${errorText}`);
+    }
+
+    return (await (
+      response as unknown as { json(): Promise<unknown> }
+    ).json()) as {
+      id_token: string;
+      access_token: string;
+      refresh_token?: string;
+    };
   }
 
   static clearCache(): void {

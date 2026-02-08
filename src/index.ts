@@ -7,4 +7,8 @@ export type { CodexModelConfig } from './codex-language-model.js';
 export type { CodexModelId, CodexSettings } from './codex-settings.js';
 
 export { CodexAuth } from './codex-auth.js';
-export type { AuthDotJson, IdTokenInfo } from './codex-auth.js';
+export type {
+  AuthDotJson,
+  IdTokenInfo,
+  RefreshTokenExchangeResult,
+} from './codex-auth.js';

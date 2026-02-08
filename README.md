@@ -1,298 +1,148 @@
-# Codex AI Provider
+# aisdk-codex
 
-An AI SDK provider for ChatGPT's Codex API, enabling seamless integration with the Vercel AI SDK using authentication from the `codex` CLI tool.
+AI SDK v6 provider for the ChatGPT Codex Responses API.
 
-## Features
-
-- 🔐 Automatic authentication using `~/.codex/auth.json` (created by `codex login`)
-- 🌊 Full streaming support for real-time responses
-- 🛠️ Tool/function calling capabilities
-- 💬 Chat conversations with system, user, and assistant messages
-- 🖼️ Multimodal support (text and images)
-- 🧠 Reasoning mode support for capable models
-- ⚙️ Configurable settings (temperature, max tokens, etc.)
+This package exports a provider compatible with `ai` (`streamText`, `generateText`, tool calling, and chat prompts).
 
 ## Installation
 
 ```bash
-npm install codex-ai-provider
-# or
-yarn add codex-ai-provider
-# or
-pnpm add codex-ai-provider
+npm install aisdk-codex ai
 ```
 
-## Prerequisites
+## Authentication
 
-Before using this provider, you need to authenticate with the ChatGPT Codex service:
+`createCodex()` supports three auth modes:
 
-1. Install the `codex` CLI tool (if not already installed)
-2. Run `codex login` to authenticate
-3. This creates `~/.codex/auth.json` with your authentication tokens
+1. Default (no options): reads `~/.codex/auth.json` from `codex login`
+2. `useApiKey: true`: reads `OPENAI_API_KEY`
+3. `apiKey: '...'`: explicit key
+4. `refreshToken: '...'`: exchanges refresh token for access token and auto-refreshes it
+
+Default base URL is:
+
+```text
+https://chatgpt.com/backend-api
+```
+
+When using an OpenAI API key, set `baseURL` appropriately (for example `https://api.openai.com/v1`).
+
+Auth precedence is:
+
+1. `apiKey`
+2. `refreshToken`
+3. `useApiKey`
+4. `~/.codex/auth.json`
 
 ## Quick Start
 
-```typescript
+```ts
 import { streamText } from 'ai';
-import { codex } from 'codex-ai-provider';
+import { createCodex } from 'aisdk-codex';
 
-// Simple text generation (streaming only)
-const result = await streamText({
-  model: codex('gpt-5'),
-  prompt: 'Write a haiku about coding.',
+const codex = createCodex();
+
+const result = streamText({
+  model: codex('gpt-5.3-codex'),
+  prompt: 'Explain AI SDK providers in one short paragraph.',
 });
 
 for await (const chunk of result.textStream) {
   process.stdout.write(chunk);
 }
+process.stdout.write('\n');
 ```
 
-## Usage Examples
+## API
 
-### Streaming Chat Conversations
+### `createCodex(options?)`
 
-```typescript
-import { streamText } from 'ai';
-import { codex } from 'codex-ai-provider';
+Options:
 
-const result = await streamText({
-  model: codex('gpt-5'),
-  messages: [
-    { role: 'system', content: 'You are a helpful assistant.' },
-    { role: 'user', content: 'What is the capital of France?' },
-    { role: 'assistant', content: 'The capital of France is Paris.' },
-    { role: 'user', content: 'Tell me more about it.' },
-  ],
-});
+- `baseURL?: string`
+- `headers?: Record<string, string>`
+- `fetch?: FetchFunction`
+- `useApiKey?: boolean`
+- `apiKey?: string`
+- `refreshToken?: string`
 
-for await (const chunk of result.textStream) {
-  process.stdout.write(chunk);
-}
+Returns a provider function:
+
+```ts
+const codex = createCodex();
+const model = codex('gpt-5.3-codex');
 ```
 
-### Usage Statistics
+Refresh-token auth example:
 
-```typescript
-import { streamText } from 'ai';
-import { codex } from 'codex-ai-provider';
-
-const result = await streamText({
-  model: codex('gpt-5'),
-  prompt: 'Explain quantum computing.',
-});
-
-// Stream the response
-for await (const chunk of result.textStream) {
-  process.stdout.write(chunk);
-}
-
-// Get usage statistics
-const usage = await result.usage;
-console.log('\nTokens:', usage);
-// Output includes: inputTokens, outputTokens, totalTokens, reasoningTokens, cachedInputTokens
-```
-
-### Tool/Function Calling
-
-```typescript
-import { streamText } from 'ai';
-import { codex } from 'codex-ai-provider';
-import { z } from 'zod';
-
-const result = await streamText({
-  model: codex('gpt-5'),
-  prompt: 'What is the weather in NYC?',
-  tools: {
-    getWeather: {
-      description: 'Get weather for a location',
-      inputSchema: z.object({
-        location: z.string().describe('City name'),
-      }),
-      execute: async ({ location }) => {
-        // Your weather API call here
-        return { temperature: 72, conditions: 'sunny' };
-      },
-    },
-  },
-  toolChoice: 'required', // Force tool usage for better results
-});
-
-// Get the tool calls
-const toolCalls = await result.toolCalls;
-console.log('Tool calls:', toolCalls);
-```
-
-### Custom Configuration
-
-```typescript
-import { createCodex } from 'codex-ai-provider';
-
-// Use custom authentication
-const customCodex = createCodex({
-  // Use API key from OPENAI_API_KEY env var
-  useApiKey: true,
-  baseURL: 'https://api.openai.com/v1',
-});
-
-// Or provide API key directly
-const codexWithKey = createCodex({
-  apiKey: 'your-api-key',
-  baseURL: 'https://api.openai.com/v1',
-});
-
-// Use with custom settings
-const result = await streamText({
-  model: codex('gpt-5', {
-    temperature: 0.7,
-    maxOutputTokens: 1000,
-    topP: 0.9,
-    reasoning: {
-      effort: 'medium',
-      summary: 'auto'
-    }
-  }),
-  prompt: 'Explain quantum computing',
-});
-```
-
-## Supported Models
-
-- `gpt-5` - Latest GPT-5 model
-- `gpt-4o` - GPT-4 Optimized
-- `gpt-4o-mini` - GPT-4 Optimized Mini
-- `o1` - OpenAI o1 reasoning model
-- `o1-mini` - OpenAI o1 mini
-- Any other model ID supported by the Codex API
-
-**Note:** The Codex API only supports streaming responses. Use `streamText()` instead of `generateText()`.
-
-## Authentication Options
-
-### 1. Default: Use ~/.codex/auth.json
-
-```typescript
-import { codex } from 'codex-ai-provider';
-
-// Automatically uses ~/.codex/auth.json
-const model = codex('gpt-4o');
-```
-
-### 2. Use OpenAI API Key
-
-```typescript
-import { createCodex } from 'codex-ai-provider';
-
+```ts
 const codex = createCodex({
-  useApiKey: true, // Uses OPENAI_API_KEY env var
-  baseURL: 'https://api.openai.com/v1',
+  refreshToken: process.env.CODEX_REFRESH_TOKEN!,
 });
 ```
 
-### 3. Provide Custom API Key
+### `codex(modelId, settings?)`
 
-```typescript
-import { createCodex } from 'codex-ai-provider';
+Per-model settings (`CodexSettings`):
 
-const codex = createCodex({
-  apiKey: 'sk-...',
-  baseURL: 'https://api.openai.com/v1',
-});
-```
+- `reasoning?: { effort?: 'low' | 'medium' | 'high'; summary?: 'auto' | 'concise' | 'detailed' }`
+- `store?: boolean`
+- `seed?: number`
 
-## API Reference
+Per-call generation settings are passed through AI SDK options (for example `temperature`, `topP`, `maxOutputTokens`, penalties, stop sequences, and tool configuration).
 
-### `createCodex(options?: CodexProviderSettings)`
+## Known model IDs
 
-Creates a new Codex provider instance.
+The type includes:
 
-**Options:**
-- `baseURL?: string` - API endpoint (default: `https://chatgpt.com/backend-api`)
-- `apiKey?: string` - Custom API key
-- `useApiKey?: boolean` - Use OPENAI_API_KEY env var
-- `headers?: Record<string, string>` - Custom headers
-- `fetch?: FetchFunction` - Custom fetch implementation
+- `gpt-5`
+- `gpt-5.1-codex`
+- `gpt-5.1-codex-max`
+- `gpt-5.1-codex-mini`
+- `gpt-5.2`
+- `gpt-5.2-codex`
+- `gpt-5.3-codex`
 
-### `codex(modelId: string, settings?: CodexSettings)`
+Any string model ID is also accepted for forward compatibility.
 
-Creates a language model instance.
+## Behavior and Limitations
 
-**Settings:**
-- `temperature?: number` - Sampling temperature (0.0-1.0)
-- `maxOutputTokens?: number` - Maximum tokens to generate
-- `topP?: number` - Top-p sampling
-- `frequencyPenalty?: number` - Frequency penalty (-2.0 to 2.0)
-- `presencePenalty?: number` - Presence penalty (-2.0 to 2.0)
-- `stopSequences?: string[]` - Stop sequences
-- `reasoning?: { effort?: 'low'|'medium'|'high', summary?: 'auto'|'none' }` - Reasoning mode
-- `verbosity?: 'low'|'medium'|'high'` - Response verbosity
-- `seed?: number` - Seed for deterministic generation
+- Uses `POST {baseURL}/codex/responses`.
+- `generateText()` works by buffering streamed SSE events in `doGenerate`.
+- `topK` is marked unsupported (warning).
+- JSON `responseFormat` is marked unsupported (warning).
+- Provider tools are filtered; function tools are forwarded.
+- System messages are merged into top-level `instructions`.
+- User image files are converted to `input_image` URLs (including base64 data URLs).
+- Non-image files are converted into placeholder text.
+- Embedding and image models are not implemented (`NoSuchModelError`).
 
-### `CodexAuth`
+## Exports
 
-Authentication utility class.
+- `createCodex`, `codex`
+- `CodexLanguageModel`
+- Types: `CodexProvider`, `CodexProviderSettings`, `CodexModelConfig`, `CodexModelId`, `CodexSettings`
+- Auth helper: `CodexAuth` and auth-related types
 
-**Methods:**
-- `validateAuth(): Promise<boolean>` - Check if authentication is valid
-- `getAuthFilePath(): string` - Get path to auth.json
-- `getAccessToken(): Promise<string>` - Get current access token
-- `getAccountId(): Promise<string>` - Get account ID
-
-## Error Handling
-
-```typescript
-import { CodexAuth } from 'codex-ai-provider';
-
-// Check authentication before making requests
-const isValid = await CodexAuth.validateAuth();
-if (!isValid) {
-  console.error('Please run "codex login" first');
-  process.exit(1);
-}
-
-// Handle API errors
-try {
-  const result = await generateText({
-    model: codex('gpt-4o'),
-    prompt: 'Hello',
-  });
-} catch (error) {
-  if (error.message.includes('Authentication')) {
-    console.error('Auth error:', error.message);
-  } else {
-    console.error('API error:', error.message);
-  }
-}
-```
-
-## Development
+## Local Development
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Build the project
-pnpm build
-
-# Run examples
-pnpm run example:simple        # Basic text generation
-pnpm run example:streaming     # Streaming with tools
-pnpm run example:auth          # Check authentication
-pnpm run example:refresh       # Test token refresh
-
-# Development mode
-pnpm dev                        # Watch mode for development
-pnpm typecheck                  # Type checking
+npm run build
 ```
+
+Package scripts currently defined:
+
+- `build`
+- `prepublishOnly`
+
+## Examples in repo
+
+- `examples/streaming.ts`
+- `examples/non-streaming.ts`
+- `examples/chat.ts`
+- `examples/model-settings.ts`
+- `examples/apikey.ts`
 
 ## License
 
 MIT
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Related Projects
-
-- [Vercel AI SDK](https://github.com/vercel/ai)
-- [OpenAI Codex](https://github.com/openai/codex)
