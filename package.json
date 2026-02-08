@@ -16,8 +16,11 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
-    "prepublishOnly": "tsc"
+    "clean": "rm -rf dist",
+    "build": "bun run clean && tsc",
+    "prepack": "bun run build",
+    "prepublishOnly": "bun run build",
+    "pack:check": "bun pm pack --dry-run"
   },
   "dependencies": {
     "@ai-sdk/provider": "^3.0.8",
@@ -38,6 +41,14 @@
     }
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1jmdev/aisdk-codex.git"
+  },
+  "homepage": "https://github.com/1jmdev/aisdk-codex#readme",
+  "bugs": {
+    "url": "https://github.com/1jmdev/aisdk-codex/issues"
+  },
   "keywords": [
     "ai-sdk",
     "codex",

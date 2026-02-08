@@ -7,7 +7,7 @@ This package exports a provider compatible with `ai` (`streamText`, `generateTex
 ## Installation
 
 ```bash
-npm install aisdk-codex ai
+bun add aisdk-codex ai
 ```
 
 ## Authentication
@@ -127,13 +127,24 @@ Any string model ID is also accepted for forward compatibility.
 ## Local Development
 
 ```bash
-npm run build
+bun run build
 ```
 
 Package scripts currently defined:
 
+- `clean`
 - `build`
+- `prepack`
 - `prepublishOnly`
+- `pack:check`
+
+## Publish (Bun + npm registry)
+
+```bash
+bun pm whoami
+bun run pack:check
+bun publish --access public
+```
 
 ## Examples in repo
 
@@ -141,7 +152,7 @@ Package scripts currently defined:
 - `examples/non-streaming.ts`
 - `examples/chat.ts`
 - `examples/model-settings.ts`
-- `examples/apikey.ts`
+- `examples/refreshToken.ts`
 
 ## License
 
